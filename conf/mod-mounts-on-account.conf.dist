@@ -41,4 +41,12 @@ moa.enable.cast = false
 
 moa.enable.learn = true
 
+#
+#    moa.enable.learn.on.login
+#        Description: The player learns the mounts, when he/she enters the server.
+#        Default:     false - Disabled
+#
+
+moa.enable.learn.on.login = false
+
 ########################################

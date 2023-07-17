@@ -14,6 +14,7 @@ struct MOA
 {
     uint32 message;
     bool enable, enableCast, enableLearn;
+    bool enableLearnOnLogin;
 };
 
 MOA moa;
@@ -27,6 +28,24 @@ public:
     {
         if (moa.enable)
             ChatHandler(player->GetSession()).PSendSysMessage(moa.message);
+
+        if (moa.enableLearnOnLogin)
+        {
+            QueryResult resultSpells = LoginDatabase.Query("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `team_id`={} OR `team_id`=2;", player->GetTeamId());
+
+            if (resultSpells && player->HasSpell(33388) && player->HasSpell(33391))
+            {
+                uint32 spellID;
+                do
+                {
+                    spellID = (*resultSpells)[0].Get<int32>();
+                    if (!player->HasSpell(spellID))
+                    {
+                        player->learnSpell(spellID);
+                    }
+                } while (resultSpells->NextRow());
+            }
+        }
     }
 
     void CustomLearnSpell(Player* player, uint64 spellID)
@@ -35,9 +54,9 @@ public:
 
         if (spellInfo->Mechanic & MECHANIC_MOUNT)
         {
-            result = WorldDatabase.Query("SELECT `entry` FROM `item_template` WHERE `spellid_2`={};", spellID);
+            QueryResult resultEntry = WorldDatabase.Query("SELECT `entry` FROM `item_template` WHERE `spellid_2`={};", spellID);
 
-            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate((*result)[0].Get<int32>());
+            ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate((*resultEntry)[0].Get<int32>());
 
             if (!itemTemplate)
                 return;
@@ -49,10 +68,10 @@ public:
 
             uint32 accountID = player->GetSession()->GetAccountId();
 
-            result = LoginDatabase.Query("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `account_id`={} AND `spell_id`={};", accountID, spellID);
+            QueryResult resultSpell = LoginDatabase.Query("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `account_id`={} AND `spell_id`={};", accountID, spellID);
 
-            if (!result)
-                result = LoginDatabase.Query("INSERT INTO `mod_mounts_on_account` (`account_id`, `team_id`, `spell_id`) VALUES ({}, {}, {});", accountID, playerTeam, spellID);
+            if (!resultSpell)
+                QueryResult resultInsert = LoginDatabase.Query("INSERT INTO `mod_mounts_on_account` (`account_id`, `team_id`, `spell_id`) VALUES ({}, {}, {});", accountID, playerTeam, spellID);
         }
     }
 
@@ -60,7 +79,7 @@ public:
     {
         if (moa.enableCast)
         {
-            spellID = spell->GetSpellInfo()->Id;
+            uint32 spellID = spell->GetSpellInfo()->Id;
             CustomLearnSpell(player, spellID);
         }
     }
@@ -72,10 +91,6 @@ public:
             CustomLearnSpell(player, spellID);
         }
     }
-
-private:
-    uint64 spellID;
-    QueryResult result;
 };
 
 class MOAWorld : public WorldScript
@@ -92,6 +107,7 @@ public:
             moa.message = sConfigMgr->GetOption<uint32>("moa.message.id", 45000);
             moa.enableCast = sConfigMgr->GetOption<bool>("moa.enable.cast", true);
             moa.enableLearn = sConfigMgr->GetOption<bool>("moa.enable.learn", true);
+            moa.enableLearnOnLogin = sConfigMgr->GetOption<bool>("moa.enable.learn.on.login", false);
         }
     }
 };
