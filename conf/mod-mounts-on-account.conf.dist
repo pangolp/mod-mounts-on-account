@@ -1,0 +1,44 @@
+#
+# Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license: https://github.com/azerothcore/azerothcore-wotlk/blob/master/LICENSE-AGPL3
+#
+
+[worldserver]
+
+########################################
+# MOA configuration
+########################################
+#
+#    moa.enable
+#        Description: Enables the message in the chat.
+#        Default:     true - Enabled
+#
+
+moa.enable = true
+
+#
+#    moa.message.id
+#        Description: ID of the acore_string table, check in the SQL folder.
+#        Default:     45000
+#
+
+moa.message.id = 45000
+
+#
+#    moa.enable.cast
+#        Description: Enables the addition of mounts when casting them.
+#                     Useful perhaps on servers that have been online for some time.
+#                     On new servers, it may not be necessary to use it.
+#        Default:     false - Disabled
+#
+
+moa.enable.cast = false
+
+#
+#    moa.enable.learn
+#        Description: Adds the mount, when the player learns the spell.
+#        Default:     true - Enabled
+#
+
+moa.enable.learn = true
+
+########################################
