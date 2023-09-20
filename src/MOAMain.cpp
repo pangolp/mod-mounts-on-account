@@ -56,6 +56,9 @@ public:
         {
             QueryResult resultEntry = WorldDatabase.Query("SELECT `entry` FROM `item_template` WHERE `spellid_2`={};", spellID);
 
+            if (!resultEntry)
+                return;
+
             ItemTemplate const* itemTemplate = sObjectMgr->GetItemTemplate((*resultEntry)[0].Get<int32>());
 
             if (!itemTemplate)
