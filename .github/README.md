@@ -4,7 +4,7 @@
 
 - Latest build status with azerothcore:
 
-[![Build Status](https://github.com/pangolp/mod-mounts-on-account/workflows/core-build/badge.svg?branch=master&event=push)](https://github.com/pangolp/mod-mounts-on-account)
+[![Build Status](https://github.com/pangolp/mod-mounts-on-account/actions/workflows/core-build.yml/badge.svg)](https://github.com/pangolp/mod-mounts-on-account)
 
 ## Description
 
