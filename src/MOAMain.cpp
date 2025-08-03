@@ -9,6 +9,7 @@
 #include "Chat.h"
 #include "Spell.h"
 #include "ScriptedGossip.h"
+#include "SpellMgr.h"
 
 struct MOA
 {
