@@ -24,7 +24,7 @@ class MOAPlayer : public PlayerScript
 public:
     MOAPlayer() : PlayerScript("MOAPlayer") { }
 
-    void OnLogin(Player* player) override
+    void OnPlayerLogin(Player* player) override
     {
         if (moa.enable)
             ChatHandler(player->GetSession()).PSendSysMessage(moa.message);
@@ -78,7 +78,7 @@ public:
         }
     }
 
-    void OnSpellCast(Player* player, Spell* spell, bool /*skipCheck*/) override
+    void OnPlayerSpellCast(Player* player, Spell* spell, bool /*skipCheck*/) override
     {
         if (moa.enableCast)
         {
@@ -87,7 +87,7 @@ public:
         }
     }
 
-    void OnLearnSpell(Player* player, uint32 spellID) override
+    void OnPlayerLearnSpell(Player* player, uint32 spellID) override
     {
         if (moa.enableLearn)
         {
