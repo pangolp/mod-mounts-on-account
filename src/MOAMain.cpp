@@ -136,17 +136,14 @@ public:
         LOG_INFO("module", "MOA: Cached {} mount-to-faction mappings.", s_mountTeamMap.size());
     }
 
-    void OnBeforeConfigLoad(bool reload) override
+    void OnBeforeConfigLoad(bool /*reload*/) override
     {
-        if (!reload)
-        {
-            sConfigMgr->LoadModulesConfigs();
-            moa.enable = sConfigMgr->GetOption<bool>("moa.enable", true);
-            moa.message = sConfigMgr->GetOption<uint32>("moa.message.id", 45000);
-            moa.enableCast = sConfigMgr->GetOption<bool>("moa.enable.cast", true);
-            moa.enableLearn = sConfigMgr->GetOption<bool>("moa.enable.learn", true);
-            moa.enableLearnOnLogin = sConfigMgr->GetOption<bool>("moa.enable.learn.on.login", false);
-        }
+        sConfigMgr->LoadModulesConfigs();
+        moa.enable = sConfigMgr->GetOption<bool>("moa.enable", true);
+        moa.message = sConfigMgr->GetOption<uint32>("moa.message.id", 45000);
+        moa.enableCast = sConfigMgr->GetOption<bool>("moa.enable.cast", true);
+        moa.enableLearn = sConfigMgr->GetOption<bool>("moa.enable.learn", true);
+        moa.enableLearnOnLogin = sConfigMgr->GetOption<bool>("moa.enable.learn.on.login", false);
     }
 };
 
