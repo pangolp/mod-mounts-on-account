@@ -75,7 +75,7 @@ public:
             QueryResult resultSpell = LoginDatabase.Query("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `account_id`={} AND `spell_id`={};", accountID, spellID);
 
             if (!resultSpell)
-                QueryResult resultInsert = LoginDatabase.Query("INSERT INTO `mod_mounts_on_account` (`account_id`, `team_id`, `spell_id`) VALUES ({}, {}, {});", accountID, playerTeam, spellID);
+                LoginDatabase.Execute("INSERT INTO `mod_mounts_on_account` (`account_id`, `team_id`, `spell_id`) VALUES ({}, {}, {});", accountID, playerTeam, spellID);
         }
     }
 
