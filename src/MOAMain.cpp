@@ -141,7 +141,7 @@ public:
         sConfigMgr->LoadModulesConfigs();
         moa.enable = sConfigMgr->GetOption<bool>("moa.enable", true);
         moa.message = sConfigMgr->GetOption<uint32>("moa.message.id", 45000);
-        moa.enableCast = sConfigMgr->GetOption<bool>("moa.enable.cast", true);
+        moa.enableCast = sConfigMgr->GetOption<bool>("moa.enable.cast", false);
         moa.enableLearn = sConfigMgr->GetOption<bool>("moa.enable.learn", true);
         moa.enableLearnOnLogin = sConfigMgr->GetOption<bool>("moa.enable.learn.on.login", false);
     }
