@@ -156,7 +156,7 @@ public:
         LOG_INFO("module", "MOA: Cached {} mount-to-faction mappings.", s_mountTeamMap.size());
     }
 
-    void OnWorldUpdate(uint32 /*diff*/) override
+    void OnUpdate(uint32 /*diff*/) override
     {
         s_loginQueryProcessor.ProcessReadyCallbacks();
     }
