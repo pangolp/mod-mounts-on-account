@@ -26,8 +26,10 @@ MOA moa;
 // Built once at startup: mount spell ID → team_id (0=Alliance, 1=Horde, 2=neutral)
 static std::unordered_map<uint32, uint32> s_mountTeamMap;
 
-static constexpr uint32 ALLIANCE_RACE_MASK = 1101; // Human|Dwarf|NightElf|Gnome|Draenei
-static constexpr uint32 HORDE_RACE_MASK    = 690;  // Orc|Undead|Tauren|Troll|BloodElf
+static constexpr uint32 ALLIANCE_RACE_MASK      = 1101; // Human|Dwarf|NightElf|Gnome|Draenei
+static constexpr uint32 HORDE_RACE_MASK         = 690;  // Orc|Undead|Tauren|Troll|BloodElf
+static constexpr uint32 SPELL_RIDING_APPRENTICE = 33388; // grants riding skill 75 (slow ground)
+static constexpr uint32 SPELL_RIDING_JOURNEYMAN = 33391; // grants riding skill 150 (fast ground)
 
 class MOAPlayer : public PlayerScript
 {
@@ -43,7 +45,7 @@ public:
         {
             QueryResult resultSpells = LoginDatabase.Query("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `team_id`={} OR `team_id`=2;", player->GetTeamId());
 
-            if (resultSpells && player->HasSpell(33388) && player->HasSpell(33391))
+            if (resultSpells && player->HasSpell(SPELL_RIDING_APPRENTICE) && player->HasSpell(SPELL_RIDING_JOURNEYMAN))
             {
                 do
                 {
