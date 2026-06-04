@@ -53,7 +53,7 @@ public:
     {
         SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(spellID);
 
-        if (spellInfo->Mechanic & MECHANIC_MOUNT)
+        if (spellInfo->Mechanic == MECHANIC_MOUNT)
         {
             QueryResult resultEntry = WorldDatabase.Query("SELECT `entry` FROM `item_template` WHERE `spellid_2`={};", spellID);
 
