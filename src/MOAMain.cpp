@@ -11,6 +11,9 @@
 #include "ScriptedGossip.h"
 #include "SpellMgr.h"
 #include "ObjectMgr.h"
+#include "ObjectAccessor.h"
+#include "AsyncCallbackProcessor.h"
+#include "StringFormat.h"
 
 #include <unordered_map>
 
@@ -25,6 +28,9 @@ MOA moa;
 
 // Built once at startup: mount spell ID → team_id (0=Alliance, 1=Horde, 2=neutral)
 static std::unordered_map<uint32, uint32> s_mountTeamMap;
+
+// Processes async login queries on every world tick
+static QueryCallbackProcessor s_loginQueryProcessor;
 
 static constexpr uint32 ALLIANCE_RACE_MASK      = 1101; // Human|Dwarf|NightElf|Gnome|Draenei
 static constexpr uint32 HORDE_RACE_MASK         = 690;  // Orc|Undead|Tauren|Troll|BloodElf
@@ -41,20 +47,32 @@ public:
         if (moa.enable)
             ChatHandler(player->GetSession()).PSendSysMessage(moa.message);
 
-        if (moa.enableLearnOnLogin)
-        {
-            QueryResult resultSpells = LoginDatabase.Query("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `team_id`={} OR `team_id`=2;", player->GetTeamId());
+        if (!moa.enableLearnOnLogin)
+            return;
 
-            if (resultSpells && player->HasSpell(SPELL_RIDING_APPRENTICE) && player->HasSpell(SPELL_RIDING_JOURNEYMAN))
+        ObjectGuid guid   = player->GetGUID();
+        uint32     teamId = player->GetTeamId();
+
+        s_loginQueryProcessor.AddCallback(
+            LoginDatabase.AsyncQuery(
+                Acore::StringFormat("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `team_id`={} OR `team_id`=2;", teamId))
+            .WithCallback([guid](QueryResult result)
             {
+                Player* p = ObjectAccessor::FindConnectedPlayer(guid);
+                if (!p || !result)
+                    return;
+
+                if (!p->HasSpell(SPELL_RIDING_APPRENTICE) || !p->HasSpell(SPELL_RIDING_JOURNEYMAN))
+                    return;
+
                 do
                 {
-                    uint32 spellID = (*resultSpells)[0].Get<uint32>();
-                    if (!player->HasSpell(spellID))
-                        player->learnSpell(spellID);
-                } while (resultSpells->NextRow());
-            }
-        }
+                    uint32 spellID = (*result)[0].Get<uint32>();
+                    if (!p->HasSpell(spellID))
+                        p->learnSpell(spellID);
+                } while (result->NextRow());
+            })
+        );
     }
 
     void CustomLearnSpell(Player* player, uint32 spellID)
@@ -136,6 +154,11 @@ public:
         }
 
         LOG_INFO("module", "MOA: Cached {} mount-to-faction mappings.", s_mountTeamMap.size());
+    }
+
+    void OnWorldUpdate(uint32 /*diff*/) override
+    {
+        s_loginQueryProcessor.ProcessReadyCallbacks();
     }
 
     void OnBeforeConfigLoad(bool /*reload*/) override
