@@ -1,7 +1,6 @@
 /*
  * Copyright (C) 2016+ AzerothCore <www.azerothcore.org>, released under GNU AGPL v3 license: https://github.com/azerothcore/azerothcore-wotlk/blob/master/LICENSE-AGPL3
- *
-*/
+ */
 
 #include "ScriptMgr.h"
 #include "Player.h"
@@ -14,7 +13,7 @@
 #include "ObjectAccessor.h"
 #include "AsyncCallbackProcessor.h"
 #include "StringFormat.h"
-
+#include "SharedDefines.h"
 #include <unordered_map>
 
 struct MOA
@@ -26,53 +25,88 @@ struct MOA
 
 MOA moa;
 
-// Built once at startup: mount spell ID → team_id (0=Alliance, 1=Horde, 2=neutral)
+// Built once at startup: mount spell ID -> team_id (0=Alliance, 1=Horde, 2=neutral)
 static std::unordered_map<uint32, uint32> s_mountTeamMap;
+// Built once at startup: mount spell ID -> required riding skill rank (75, 150, 225, 300)
+static std::unordered_map<uint32, uint32> s_mountSkillMap;
 
 // Processes async login queries on every world tick
 static QueryCallbackProcessor s_loginQueryProcessor;
 
 static constexpr uint32 ALLIANCE_RACE_MASK      = 1101; // Human|Dwarf|NightElf|Gnome|Draenei
 static constexpr uint32 HORDE_RACE_MASK         = 690;  // Orc|Undead|Tauren|Troll|BloodElf
-static constexpr uint32 SPELL_RIDING_APPRENTICE = 33388; // grants riding skill 75 (slow ground)
-static constexpr uint32 SPELL_RIDING_JOURNEYMAN = 33391; // grants riding skill 150 (fast ground)
+
+// Riding Skill Spells
+static constexpr uint32 SPELL_RIDING_APPRENTICE = 33388; // grants riding skill 75
+static constexpr uint32 SPELL_RIDING_JOURNEYMAN = 33391; // grants riding skill 150
+static constexpr uint32 SPELL_RIDING_EXPERT     = 34090; // grants riding skill 225
+static constexpr uint32 SPELL_RIDING_ARTISAN    = 34091; // grants riding skill 300
 
 class MOAPlayer : public PlayerScript
 {
 public:
     MOAPlayer() : PlayerScript("MOAPlayer") { }
 
-    void OnPlayerLogin(Player* player) override
+    static bool IsRidingSkillSpell(uint32 spellID)
     {
-        if (moa.enable)
-            ChatHandler(player->GetSession()).PSendSysMessage(moa.message);
+        SpellLearnSkillNode const* learnSkill = sSpellMgr->GetSpellLearnSkill(spellID);
+        return learnSkill && learnSkill->skill == SKILL_RIDING;
+    }
 
-        if (!moa.enableLearnOnLogin)
-            return;
-
-        ObjectGuid guid   = player->GetGUID();
-        uint32     teamId = player->GetTeamId();
+    // Helper function to sync mounts from DB based on current skill
+    void SyncAccountMounts(Player* player)
+    {
+        ObjectGuid guid    = player->GetGUID();
+        uint32     teamId  = player->GetTeamId();
+        uint32     accountId = player->GetSession()->GetAccountId();
 
         s_loginQueryProcessor.AddCallback(
             LoginDatabase.AsyncQuery(
-                Acore::StringFormat("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `team_id`={} OR `team_id`=2;", teamId))
-            .WithCallback([guid](QueryResult result)
+                Acore::StringFormat("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `account_id`={} AND (`team_id`={} OR `team_id`=2);", accountId, teamId)
+            ).WithCallback([guid](QueryResult result)
             {
                 Player* p = ObjectAccessor::FindConnectedPlayer(guid);
                 if (!p || !result)
                     return;
 
-                if (!p->HasSpell(SPELL_RIDING_APPRENTICE) || !p->HasSpell(SPELL_RIDING_JOURNEYMAN))
-                    return;
+                uint16 playerRidingSkill = p->GetSkillValue(SKILL_RIDING);
+                
+                if (p->HasSpell(SPELL_RIDING_ARTISAN))         
+                    playerRidingSkill = std::max<uint16>(playerRidingSkill, 300);
+                else if (p->HasSpell(SPELL_RIDING_EXPERT))     
+                    playerRidingSkill = std::max<uint16>(playerRidingSkill, 225);
+                else if (p->HasSpell(SPELL_RIDING_JOURNEYMAN)) 
+                    playerRidingSkill = std::max<uint16>(playerRidingSkill, 150);
+                else if (p->HasSpell(SPELL_RIDING_APPRENTICE)) 
+                    playerRidingSkill = std::max<uint16>(playerRidingSkill, 75);
 
                 do
                 {
                     uint32 spellID = (*result)[0].Get<uint32>();
-                    if (!p->HasSpell(spellID))
-                        p->learnSpell(spellID);
+                    
+                    uint32 reqSkill = 0;
+                    auto it = s_mountSkillMap.find(spellID);
+                    if (it != s_mountSkillMap.end())
+                        reqSkill = it->second;
+
+                    // Only teach the mount if the player has the required riding skill level
+                    if (playerRidingSkill >= reqSkill)
+                    {
+                        if (!p->HasSpell(spellID))
+                            p->learnSpell(spellID);
+                    }
                 } while (result->NextRow());
             })
         );
+    }
+
+    void OnPlayerLogin(Player* player) override
+    {
+        if (moa.enable)
+            ChatHandler(player->GetSession()).PSendSysMessage(moa.message);
+
+        if (moa.enableLearnOnLogin)
+            SyncAccountMounts(player);
     }
 
     void CustomLearnSpell(Player* player, uint32 spellID)
@@ -100,20 +134,34 @@ public:
             teamId = it->second;
 
         uint32 accountId = player->GetSession()->GetAccountId();
+
         LoginDatabase.Execute("INSERT IGNORE INTO `mod_mounts_on_account` (`account_id`, `team_id`, `spell_id`) VALUES ({}, {}, {});",
             accountId, teamId, spellID);
     }
 
     void OnPlayerSpellCast(Player* player, Spell* spell, bool /*skipCheck*/) override
     {
+        uint32 const spellID = spell->GetSpellInfo()->Id;
+
         if (moa.enableCast)
-            CustomLearnSpell(player, spell->GetSpellInfo()->Id);
+            CustomLearnSpell(player, spellID);
+
+        if (IsRidingSkillSpell(spellID))
+            SyncAccountMounts(player);
     }
 
     void OnPlayerLearnSpell(Player* player, uint32 spellID) override
     {
+        // 1. Check if the learned spell is a mount and save it to the DB
         if (moa.enableLearn)
             CustomLearnSpell(player, spellID);
+
+        // 2. Check if the learned spell is a Riding Skill upgrade. 
+        // If yes, dynamically trigger a sync to grant available account mounts immediately.
+        if (IsRidingSkillSpell(spellID))
+        {
+            SyncAccountMounts(player);
+        }
     }
 };
 
@@ -149,6 +197,11 @@ public:
                     teamId = TEAM_HORDE;
 
                 s_mountTeamMap[spellId] = teamId;
+
+                // Cache the required riding skill from the item template
+                if (item.RequiredSkill == SKILL_RIDING)
+                    s_mountSkillMap[spellId] = item.RequiredSkillRank;
+
                 break;
             }
         }
@@ -164,11 +217,12 @@ public:
     void OnBeforeConfigLoad(bool /*reload*/) override
     {
         sConfigMgr->LoadModulesConfigs();
+
         moa.enable = sConfigMgr->GetOption<bool>("moa.enable", true);
         moa.message = sConfigMgr->GetOption<uint32>("moa.message.id", 45000);
         moa.enableCast = sConfigMgr->GetOption<bool>("moa.enable.cast", false);
         moa.enableLearn = sConfigMgr->GetOption<bool>("moa.enable.learn", true);
-        moa.enableLearnOnLogin = sConfigMgr->GetOption<bool>("moa.enable.learn.on.login", false);
+        moa.enableLearnOnLogin = sConfigMgr->GetOption<bool>("moa.enable.learn.on.login", true);
     }
 };
 
