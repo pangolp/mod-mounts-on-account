@@ -30,6 +30,46 @@ static std::unordered_map<uint32, uint32> s_mountTeamMap;
 // Built once at startup: mount spell ID -> required riding skill rank (75, 150, 225, 300)
 static std::unordered_map<uint32, uint32> s_mountSkillMap;
 
+// Class-specific mount spell ID -> required class
+static const std::unordered_map<uint32, uint8> s_mountClassMap = {
+    // Death Knight
+    {48778, CLASS_DEATH_KNIGHT},
+    {54729, CLASS_DEATH_KNIGHT},
+    // Warlock
+    {5784, CLASS_WARLOCK},
+    {23161, CLASS_WARLOCK},
+    // Paladin
+    {34769, CLASS_PALADIN},
+    {13819, CLASS_PALADIN},
+    {23214, CLASS_PALADIN},
+    {34767, CLASS_PALADIN}
+};
+
+// Class-specific mount spell ID -> required riding skill rank (not obtainable from items)
+static const std::unordered_map<uint32, uint32> s_classMountSkillMap = {
+    // Death Knight
+    {48778, 75},
+    {54729, 225},
+    // Warlock
+    {5784, 75},
+    {23161, 150},
+    // Paladin
+    {34769, 75},
+    {13819, 75},
+    {23214, 150},
+    {34767, 150}
+};
+
+// Class-specific mount spell ID -> required team/faction (not obtainable from items)
+static const std::unordered_map<uint32, uint32> s_classMountTeamMap = {
+    // Alliance Paladin
+    {13819, TEAM_ALLIANCE},
+    {23214, TEAM_ALLIANCE}
+    // Horde Paladin
+    {34769, TEAM_HORDE},
+    {34767, TEAM_HORDE}
+};
+
 // Processes async login queries on every world tick
 static QueryCallbackProcessor s_loginQueryProcessor;
 
@@ -80,10 +120,20 @@ public:
                 else if (p->HasSpell(SPELL_RIDING_APPRENTICE)) 
                     playerRidingSkill = std::max<uint16>(playerRidingSkill, 75);
 
+                uint8 playerClass = p->getClass();
+
                 do
                 {
                     uint32 spellID = (*result)[0].Get<uint32>();
                     
+                    // Enforce class restrictions for class-specific mounts
+                    auto classIt = s_mountClassMap.find(spellID);
+                    if (classIt != s_mountClassMap.end())
+                    {
+                        if (playerClass != classIt->second)
+                            continue;
+                    }
+
                     uint32 reqSkill = 0;
                     auto it = s_mountSkillMap.find(spellID);
                     if (it != s_mountSkillMap.end())
@@ -206,6 +256,13 @@ public:
             }
         }
 
+        // Populate class-specific mounts that do not have associated items
+        for (auto const& [spellId, skill] : s_classMountSkillMap)
+            s_mountSkillMap[spellId] = skill;
+
+        for (auto const& [spellId, teamId] : s_classMountTeamMap)
+            s_mountTeamMap[spellId] = teamId;
+
         LOG_INFO("module", "MOA: Cached {} mount-to-faction mappings.", s_mountTeamMap.size());
     }
 
@@ -231,3 +288,4 @@ void AddMOAPlayerScripts()
     new MOAPlayer();
     new MOAWorld();
 }
+
