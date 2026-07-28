@@ -64,7 +64,7 @@ static const std::unordered_map<uint32, uint32> s_classMountSkillMap = {
 static const std::unordered_map<uint32, uint32> s_classMountTeamMap = {
     // Alliance Paladin
     {13819, TEAM_ALLIANCE},
-    {23214, TEAM_ALLIANCE}
+    {23214, TEAM_ALLIANCE},
     // Horde Paladin
     {34769, TEAM_HORDE},
     {34767, TEAM_HORDE}
