@@ -14,13 +14,22 @@
 #include "AsyncCallbackProcessor.h"
 #include "StringFormat.h"
 #include "SharedDefines.h"
+#if __has_include("Playerbots.h")
+#include "Playerbots.h"
+#define MOA_HAS_PLAYERBOTS 1
+#else
+#define MOA_HAS_PLAYERBOTS 0
+#endif
 #include <unordered_map>
+#include <vector>
 
 struct MOA
 {
     uint32 message;
     bool enable, enableCast, enableLearn;
     bool enableLearnOnLogin;
+    bool enableAccountCache;
+    bool skipBotsOnLogin;
 };
 
 MOA moa;
@@ -29,6 +38,8 @@ MOA moa;
 static std::unordered_map<uint32, uint32> s_mountTeamMap;
 // Built once at startup: mount spell ID -> required riding skill rank (75, 150, 225, 300)
 static std::unordered_map<uint32, uint32> s_mountSkillMap;
+// Account-level cache of learned mounts: account_id -> (spell_id, team_id)
+static std::unordered_map<uint32, std::vector<std::pair<uint32, uint32>>> s_accountMountCache;
 
 // Class-specific mount spell ID -> required class
 static const std::unordered_map<uint32, uint8> s_mountClassMap = {
@@ -87,65 +98,100 @@ class MOAPlayer : public PlayerScript
 public:
     MOAPlayer() : PlayerScript("MOAPlayer") { }
 
+    static bool IsPlayerBot(Player* player)
+    {
+#if MOA_HAS_PLAYERBOTS
+        return sPlayerbotsMgr.GetPlayerbotAI(player) != nullptr;
+#else
+        (void)player;
+        return false;
+#endif
+    }
+
     static bool IsRidingSkillSpell(uint32 spellID)
     {
         SpellLearnSkillNode const* learnSkill = sSpellMgr->GetSpellLearnSkill(spellID);
         return learnSkill && learnSkill->skill == SKILL_RIDING;
     }
 
+    static void ApplyMountsToPlayer(Player* player, std::vector<std::pair<uint32, uint32>> const& accountMounts)
+    {
+        uint16 playerRidingSkill = player->GetSkillValue(SKILL_RIDING);
+
+        if (player->HasSpell(SPELL_RIDING_ARTISAN))
+            playerRidingSkill = std::max<uint16>(playerRidingSkill, 300);
+        else if (player->HasSpell(SPELL_RIDING_EXPERT))
+            playerRidingSkill = std::max<uint16>(playerRidingSkill, 225);
+        else if (player->HasSpell(SPELL_RIDING_JOURNEYMAN))
+            playerRidingSkill = std::max<uint16>(playerRidingSkill, 150);
+        else if (player->HasSpell(SPELL_RIDING_APPRENTICE))
+            playerRidingSkill = std::max<uint16>(playerRidingSkill, 75);
+
+        uint8 playerClass = player->getClass();
+        uint32 playerTeamId = player->GetTeamId();
+
+        for (auto const& [spellID, spellTeamId] : accountMounts)
+        {
+            if (spellTeamId != playerTeamId && spellTeamId != 2)
+                continue;
+
+            auto classIt = s_mountClassMap.find(spellID);
+            if (classIt != s_mountClassMap.end() && playerClass != classIt->second)
+                continue;
+
+            uint32 reqSkill = 0;
+            auto it = s_mountSkillMap.find(spellID);
+            if (it != s_mountSkillMap.end())
+                reqSkill = it->second;
+
+            if (playerRidingSkill >= reqSkill && !player->HasSpell(spellID))
+                player->learnSpell(spellID);
+        }
+    }
+
     // Helper function to sync mounts from DB based on current skill
     void SyncAccountMounts(Player* player)
     {
-        ObjectGuid guid    = player->GetGUID();
-        uint32     teamId  = player->GetTeamId();
-        uint32     accountId = player->GetSession()->GetAccountId();
+        uint32 accountId = player->GetSession()->GetAccountId();
+
+        if (moa.enableAccountCache)
+        {
+            auto cacheIt = s_accountMountCache.find(accountId);
+            if (cacheIt != s_accountMountCache.end())
+            {
+                ApplyMountsToPlayer(player, cacheIt->second);
+                return;
+            }
+        }
+
+        ObjectGuid guid = player->GetGUID();
 
         s_loginQueryProcessor.AddCallback(
             LoginDatabase.AsyncQuery(
-                Acore::StringFormat("SELECT `spell_id` FROM `mod_mounts_on_account` WHERE `account_id`={} AND (`team_id`={} OR `team_id`=2);", accountId, teamId)
+                Acore::StringFormat("SELECT `spell_id`, `team_id` FROM `mod_mounts_on_account` WHERE `account_id`={};", accountId)
             ).WithCallback([guid](QueryResult result)
             {
                 Player* p = ObjectAccessor::FindConnectedPlayer(guid);
                 if (!p || !result)
                     return;
 
-                uint16 playerRidingSkill = p->GetSkillValue(SKILL_RIDING);
-                
-                if (p->HasSpell(SPELL_RIDING_ARTISAN))         
-                    playerRidingSkill = std::max<uint16>(playerRidingSkill, 300);
-                else if (p->HasSpell(SPELL_RIDING_EXPERT))     
-                    playerRidingSkill = std::max<uint16>(playerRidingSkill, 225);
-                else if (p->HasSpell(SPELL_RIDING_JOURNEYMAN)) 
-                    playerRidingSkill = std::max<uint16>(playerRidingSkill, 150);
-                else if (p->HasSpell(SPELL_RIDING_APPRENTICE)) 
-                    playerRidingSkill = std::max<uint16>(playerRidingSkill, 75);
-
-                uint8 playerClass = p->getClass();
+                std::vector<std::pair<uint32, uint32>> accountMounts;
+                accountMounts.reserve(result->GetRowCount());
 
                 do
                 {
                     uint32 spellID = (*result)[0].Get<uint32>();
-                    
-                    // Enforce class restrictions for class-specific mounts
-                    auto classIt = s_mountClassMap.find(spellID);
-                    if (classIt != s_mountClassMap.end())
-                    {
-                        if (playerClass != classIt->second)
-                            continue;
-                    }
-
-                    uint32 reqSkill = 0;
-                    auto it = s_mountSkillMap.find(spellID);
-                    if (it != s_mountSkillMap.end())
-                        reqSkill = it->second;
-
-                    // Only teach the mount if the player has the required riding skill level
-                    if (playerRidingSkill >= reqSkill)
-                    {
-                        if (!p->HasSpell(spellID))
-                            p->learnSpell(spellID);
-                    }
+                    uint32 teamID = (*result)[1].Get<uint32>();
+                    accountMounts.emplace_back(spellID, teamID);
                 } while (result->NextRow());
+
+                if (moa.enableAccountCache)
+                {
+                    uint32 accountId = p->GetSession()->GetAccountId();
+                    s_accountMountCache[accountId] = accountMounts;
+                }
+
+                MOAPlayer::ApplyMountsToPlayer(p, accountMounts);
             })
         );
     }
@@ -154,6 +200,9 @@ public:
     {
         if (moa.enable)
             ChatHandler(player->GetSession()).PSendSysMessage(moa.message);
+
+        if (moa.skipBotsOnLogin && IsPlayerBot(player))
+            return;
 
         if (moa.enableLearnOnLogin)
             SyncAccountMounts(player);
@@ -187,6 +236,26 @@ public:
 
         LoginDatabase.Execute("INSERT IGNORE INTO `mod_mounts_on_account` (`account_id`, `team_id`, `spell_id`) VALUES ({}, {}, {});",
             accountId, teamId, spellID);
+
+        if (moa.enableAccountCache)
+        {
+            auto cacheIt = s_accountMountCache.find(accountId);
+            if (cacheIt != s_accountMountCache.end())
+            {
+                bool exists = false;
+                for (auto const& [cachedSpellId, _] : cacheIt->second)
+                {
+                    if (cachedSpellId == spellID)
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists)
+                    cacheIt->second.emplace_back(spellID, teamId);
+            }
+        }
     }
 
     void OnPlayerSpellCast(Player* player, Spell* spell, bool /*skipCheck*/) override
@@ -195,9 +264,6 @@ public:
 
         if (moa.enableCast)
             CustomLearnSpell(player, spellID);
-
-        if (IsRidingSkillSpell(spellID))
-            SyncAccountMounts(player);
     }
 
     void OnPlayerLearnSpell(Player* player, uint32 spellID) override
@@ -279,7 +345,9 @@ public:
         moa.message = sConfigMgr->GetOption<uint32>("moa.message.id", 45000);
         moa.enableCast = sConfigMgr->GetOption<bool>("moa.enable.cast", false);
         moa.enableLearn = sConfigMgr->GetOption<bool>("moa.enable.learn", true);
-        moa.enableLearnOnLogin = sConfigMgr->GetOption<bool>("moa.enable.learn.on.login", true);
+        moa.enableLearnOnLogin = sConfigMgr->GetOption<bool>("moa.enable.learn.on.login", false);
+        moa.enableAccountCache = sConfigMgr->GetOption<bool>("moa.enable.account.cache", true);
+        moa.skipBotsOnLogin = sConfigMgr->GetOption<bool>("moa.skip.bots.on.login", true);
     }
 };
 

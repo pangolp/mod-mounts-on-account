@@ -56,4 +56,20 @@ moa.enable.learn = true
 
 moa.enable.learn.on.login = false
 
+#
+#    moa.enable.account.cache
+#        Description: Caches account mounts in RAM to reduce login SQL load.
+#        Default:     true - Enabled
+#
+
+moa.enable.account.cache = true
+
+#
+#    moa.skip.bots.on.login
+#        Description: Skips mount sync for playerbots on login when playerbots is available.
+#        Default:     true - Enabled
+#
+
+moa.skip.bots.on.login = true
+
 ########################################
